@@ -42,8 +42,8 @@ public:
     void analog(unsigned int channel, std::uint16_t value,
                 std::uint64_t cycle) override;
     void samplingInput(float left, float right, std::uint64_t cycle) override;
-    void stereoOutput(float &left, float &right,
-                      std::uint64_t cycle) override;
+    void audioOutput(float *channels, std::size_t channelCount,
+                     std::uint64_t cycle) override;
 
     [[nodiscard]] bool isReady() const {
         return ready.load(std::memory_order_acquire);
@@ -102,7 +102,7 @@ private:
     Eps16ProbeMachine *machine{};
     bool blockActive{};
     std::uint64_t cycleBase{};
-    BandlimitedResampler resampler;
+    std::array<BandlimitedResampler, 4> resamplers;
 };
 
 } // namespace eps16::vst3

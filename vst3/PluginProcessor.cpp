@@ -104,7 +104,10 @@ Eps16PlusProcessor::Eps16PlusProcessor()
              a routable sidechain source on a MIDI/instrument track. */
           .withInput("Main Input", juce::AudioChannelSet::stereo(), false)
           .withInput("Sampling Input", juce::AudioChannelSet::stereo(), true)
-          .withOutput("Main Output", juce::AudioChannelSet::stereo(), true)) {
+          .withOutput("Main Output", juce::AudioChannelSet::stereo(), true)
+          .withOutput("OEX Bus 2", juce::AudioChannelSet::stereo(), false)
+          .withOutput("OEX Bus 3", juce::AudioChannelSet::stereo(), false)
+          .withOutput("OEX Aux 1", juce::AudioChannelSet::stereo(), false)) {
     refreshResourcePaths();
 }
 
@@ -131,19 +134,25 @@ void Eps16PlusProcessor::prepareToPlay(double sampleRate, int) {
 }
 
 bool Eps16PlusProcessor::isBusesLayoutSupported(const BusesLayout &layouts) const {
-    /* AUv2 has no disabled-bus concept: JUCE enables every declared bus while
-       constructing the wrapper.  Accept that wrapper-mandated main input, but
-       keep the VST3 layout (disabled main input plus sampling sidechain)
-       unchanged. */
+    /* Hosts negotiate optional sidechain and auxiliary buses by temporarily
+       disabling them. Accept every disabled/stereo combination so the VST3
+       wrapper can complete that protocol instead of forcing the host to guess
+       a fallback layout. AUv2 may additionally require a stereo main input. */
     const auto mainInput = layouts.getChannelSet(true, 0);
-    const auto expectedMainInput =
-        wrapperType == wrapperType_AudioUnit
-            ? juce::AudioChannelSet::stereo()
-            : juce::AudioChannelSet::disabled();
-    return layouts.inputBuses.size() == 2 &&
-           mainInput == expectedMainInput &&
-           layouts.getChannelSet(true, 1) == juce::AudioChannelSet::stereo() &&
-           layouts.getMainOutputChannelSet() == juce::AudioChannelSet::stereo();
+    const auto samplingInput = layouts.getChannelSet(true, 1);
+    if (layouts.inputBuses.size() != 2 || layouts.outputBuses.size() != 4 ||
+        (!mainInput.isDisabled() &&
+         mainInput != juce::AudioChannelSet::stereo()) ||
+        (!samplingInput.isDisabled() &&
+         samplingInput != juce::AudioChannelSet::stereo()) ||
+        layouts.getChannelSet(false, 0) != juce::AudioChannelSet::stereo())
+        return false;
+    for (int bus = 1; bus < 4; ++bus) {
+        const auto channels = layouts.getChannelSet(false, bus);
+        if (!channels.isDisabled() && channels != juce::AudioChannelSet::stereo())
+            return false;
+    }
+    return true;
 }
 
 void Eps16PlusProcessor::processBlock(juce::AudioBuffer<float> &buffer,
@@ -152,8 +161,13 @@ void Eps16PlusProcessor::processBlock(juce::AudioBuffer<float> &buffer,
     const auto samples = buffer.getNumSamples();
     auto samplingInput = getBusBuffer(buffer, true, 1);
     auto mainOutput = getBusBuffer(buffer, false, 0);
-    const float *inputLeft = samplingInput.getReadPointer(0);
-    const float *inputRight = samplingInput.getReadPointer(1);
+    auto bus2Output = getBusBuffer(buffer, false, 1);
+    auto bus3Output = getBusBuffer(buffer, false, 2);
+    auto aux1Output = getBusBuffer(buffer, false, 3);
+    const float *inputLeft = samplingInput.getNumChannels() > 0
+        ? samplingInput.getReadPointer(0) : nullptr;
+    const float *inputRight = samplingInput.getNumChannels() > 1
+        ? samplingInput.getReadPointer(1) : inputLeft;
     std::size_t eventCount = 0;
     if (const auto *playHead = getPlayHead()) {
         if (const auto position = playHead->getPosition()) {
@@ -194,8 +208,17 @@ void Eps16PlusProcessor::processBlock(juce::AudioBuffer<float> &buffer,
                      });
 
     std::size_t sysExOutputCount = 0;
-    bridge.process(inputLeft, inputRight, mainOutput.getWritePointer(0),
-                   mainOutput.getWritePointer(1), samples, midiEvents.data(),
+    std::array<float *, 8> outputChannels{
+        mainOutput.getWritePointer(0), mainOutput.getWritePointer(1),
+        bus2Output.getNumChannels() > 0 ? bus2Output.getWritePointer(0) : nullptr,
+        bus2Output.getNumChannels() > 1 ? bus2Output.getWritePointer(1) : nullptr,
+        bus3Output.getNumChannels() > 0 ? bus3Output.getWritePointer(0) : nullptr,
+        bus3Output.getNumChannels() > 1 ? bus3Output.getWritePointer(1) : nullptr,
+        aux1Output.getNumChannels() > 0 ? aux1Output.getWritePointer(0) : nullptr,
+        aux1Output.getNumChannels() > 1 ? aux1Output.getWritePointer(1) : nullptr
+    };
+    bridge.process(inputLeft, inputRight, outputChannels.data(),
+                   outputChannels.size(), samples, midiEvents.data(),
                    eventCount, sysExOutput.data(), sysExOutput.size(),
                    &sysExOutputCount);
     midi.clear();

@@ -50,9 +50,11 @@ struct CaptureSink final : EmulatorSink {
         inputSum += left + right;
         ++inputFrames;
     }
-    void stereoOutput(float &left, float &right, std::uint64_t cycle) override {
-        left = static_cast<float>(cycle & 1U);
-        right = -left;
+    void audioOutput(float *channels, std::size_t channelCount,
+                     std::uint64_t cycle) override {
+        for (std::size_t channel = 0; channel < channelCount; ++channel)
+            channels[channel] = static_cast<float>(channel + 1) +
+                                static_cast<float>(cycle & 1U);
     }
     double preparedRate{};
     std::uint64_t lastRunCycle{};
@@ -89,8 +91,10 @@ int main() {
     constexpr int frames = 48000;
     std::array<float, frames> inputLeft{};
     std::array<float, frames> inputRight{};
-    std::array<float, frames> outputLeft{};
-    std::array<float, frames> outputRight{};
+    std::array<std::array<float, frames>, 8> outputs{};
+    std::array<float *, 8> outputChannels{};
+    for (std::size_t channel = 0; channel < outputs.size(); ++channel)
+        outputChannels[channel] = outputs[channel].data();
     inputLeft.fill(0.25f);
     inputRight.fill(-0.125f);
     const MidiEvent midi[] = {
@@ -99,12 +103,14 @@ int main() {
         {19200, 0xe0, 0, 64}, {24000, 0x80, 60, 0},
         {28800, 0xf8, 0, 0}
     };
-    bridge.process(inputLeft.data(), inputRight.data(), outputLeft.data(),
-                   outputRight.data(), frames, midi, 7);
+    bridge.process(inputLeft.data(), inputRight.data(), outputChannels.data(),
+                   outputChannels.size(), frames, midi, 7);
 
     assert(bridge.cpuCycles() == kCpuClockHz);
     assert(sink.lastRunCycle == kCpuClockHz);
     assert(sink.inputFrames == frames);
+    for (std::size_t channel = 0; channel < outputs.size(); ++channel)
+        assert(outputs[channel][frames - 1] >= static_cast<float>(channel + 1));
     assert(std::abs(sink.inputSum - 6000.0) < 0.01);
     assert(sink.panelMessages.size() == 4);
     assert(sink.panelMessages[0].value == 0xa3);
@@ -228,7 +234,7 @@ int main() {
     assert(partitionedBridge.prepare(48000.0));
     for (int block = 0; block < 48; ++block) {
         partitionedBridge.process(inputLeft.data(), inputRight.data(),
-                                  outputLeft.data(), outputRight.data(), 1000,
+                                  outputs[0].data(), outputs[1].data(), 1000,
                                   nullptr, 0);
     }
     assert(partitionedBridge.cpuCycles() == bridge.cpuCycles());
@@ -238,7 +244,7 @@ int main() {
        sink. Mirror that new absolute-cycle origin in the capture sink. */
     partitionedSink.lastRunCycle = 0;
     partitionedBridge.process(inputLeft.data(), inputRight.data(),
-                              outputLeft.data(), outputRight.data(), 1,
+                              outputs[0].data(), outputs[1].data(), 1,
                               nullptr, 0);
     assert(partitionedBridge.cpuCycles() == 208);
     return 0;

@@ -124,7 +124,10 @@ bool ProbeMachineSink::saveDisk(const std::string &path, bool hfeFormat) {
 }
 
 void ProbeMachineSink::prepare(double dawSampleRate) {
-    if (!resampler.prepare(dawSampleRate)) {
+    if (!std::all_of(resamplers.begin(), resamplers.end(),
+                     [dawSampleRate](auto &resampler) {
+                         return resampler.prepare(dawSampleRate);
+                     })) {
         const std::lock_guard<std::mutex> lock(statusMutex);
         statusText = "unsupported DAW sample rate";
         ready.store(false, std::memory_order_release);
@@ -176,8 +179,11 @@ void ProbeMachineSink::runUntil(std::uint64_t absoluteCpuCycle) {
         const auto count = eps16_probe_machine_drain_audio(frames, 32);
         for (std::size_t index = 0; index < count; ++index) {
             const auto &frame = frames[index];
-            resampler.push(frame.cpu_cycle - cycleBase, frame.clock_divider,
-                           frame.left, frame.right);
+            for (std::size_t bus = 0; bus < resamplers.size(); ++bus)
+                resamplers[bus].push(frame.cpu_cycle - cycleBase,
+                                     frame.clock_divider,
+                                     frame.outputs[bus * 2],
+                                     frame.outputs[bus * 2 + 1]);
         }
         if (count < 32) break;
     }
@@ -220,14 +226,17 @@ void ProbeMachineSink::samplingInput(float left, float right, std::uint64_t) {
         ? eps16_probe_machine_sampling_input(mono, mono) : mono;
 }
 
-void ProbeMachineSink::stereoOutput(float &left, float &right,
-                                    std::uint64_t cycle) {
+void ProbeMachineSink::audioOutput(float *channels, std::size_t channelCount,
+                                  std::uint64_t cycle) {
+    if (!channels || !channelCount) return;
+    std::fill_n(channels, channelCount, 0.0f);
     if (!isReady()) {
-        left = 0.0f;
-        right = 0.0f;
         return;
     }
-    resampler.output(cycle, left, right);
+    const auto busCount = std::min(resamplers.size(), channelCount / 2);
+    for (std::size_t bus = 0; bus < busCount; ++bus)
+        resamplers[bus].output(cycle, channels[bus * 2],
+                              channels[bus * 2 + 1]);
     /* The sampling board's mono input monitor is present only while the
        original OS has selected the Level-Detect VFD mode with its trigger
        marker. This is the EPS board route, not the disabled VST Main Input
@@ -236,8 +245,9 @@ void ProbeMachineSink::stereoOutput(float &left, float &right,
         const float gain =
             (float)eps16_probe_machine_master_volume() / 1023.0f;
         const float monitor = samplingMonitorSample * gain;
-        left = std::clamp(left + monitor, -1.0f, 1.0f);
-        right = std::clamp(right + monitor, -1.0f, 1.0f);
+        channels[0] = std::clamp(channels[0] + monitor, -1.0f, 1.0f);
+        if (channelCount > 1)
+            channels[1] = std::clamp(channels[1] + monitor, -1.0f, 1.0f);
     }
 }
 
@@ -325,7 +335,7 @@ bool ProbeMachineSink::restoreState(const void *data, std::size_t size) {
     }
     cycleBase = eps16_probe_machine_cycles();
     discardQueuedAudio();
-    resampler.reset();
+    for (auto &resampler : resamplers) resampler.reset();
     publishDisplay();
     {
         const std::lock_guard<std::mutex> lock(statusMutex);

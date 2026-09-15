@@ -10,6 +10,26 @@
 int main(int argc, char **argv) {
     const juce::ScopedJuceInitialiser_GUI gui;
     Eps16PlusProcessor processor;
+    if (processor.getBusCount(false) != 4 ||
+        processor.getBus(false, 0)->getName() != "Main Output" ||
+        processor.getBus(false, 1)->getName() != "OEX Bus 2" ||
+        processor.getBus(false, 2)->getName() != "OEX Bus 3" ||
+        processor.getBus(false, 3)->getName() != "OEX Aux 1")
+        return 33;
+    {
+        Eps16PlusProcessor layoutProcessor;
+        auto layout = layoutProcessor.getBusesLayout();
+        layout.inputBuses[0] = juce::AudioChannelSet::disabled();
+        layout.inputBuses[1] = juce::AudioChannelSet::disabled();
+        for (int bus = 0; bus < 4; ++bus)
+            layout.outputBuses.getReference(bus) =
+                juce::AudioChannelSet::stereo();
+        if (!layoutProcessor.setBusesLayout(layout)) return 34;
+        for (int bus = 1; bus < 4; ++bus)
+            layout.outputBuses.getReference(bus) =
+                juce::AudioChannelSet::disabled();
+        if (!layoutProcessor.setBusesLayout(layout)) return 35;
+    }
     if (argc == 2 && std::string(argv[1]) == "--synthetic-startup") {
         juce::TemporaryFile romFile(".bin");
         juce::TemporaryFile kpcFile(".bin");

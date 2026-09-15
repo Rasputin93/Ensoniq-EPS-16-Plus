@@ -45,8 +45,8 @@ public:
     virtual void analog(unsigned int channel, std::uint16_t value,
                         std::uint64_t cycle) = 0;
     virtual void samplingInput(float left, float right, std::uint64_t cycle) = 0;
-    virtual void stereoOutput(float &left, float &right,
-                              std::uint64_t cycle) = 0;
+    virtual void audioOutput(float *channels, std::size_t channelCount,
+                             std::uint64_t cycle) = 0;
 };
 
 class SilentSink final : public EmulatorSink {
@@ -62,9 +62,9 @@ public:
     void panelByte(std::uint8_t, std::uint64_t) override {}
     void analog(unsigned int, std::uint16_t, std::uint64_t) override {}
     void samplingInput(float, float, std::uint64_t) override {}
-    void stereoOutput(float &left, float &right, std::uint64_t) override {
-        left = 0.0f;
-        right = 0.0f;
+    void audioOutput(float *channels, std::size_t channelCount,
+                     std::uint64_t) override {
+        std::fill_n(channels, channelCount, 0.0f);
     }
 };
 
@@ -113,11 +113,23 @@ public:
     bool enqueueAnalog(unsigned int channel, std::uint16_t value);
     bool enqueueSysEx(const std::uint8_t *bytes, std::size_t size);
     void process(const float *inputLeft, const float *inputRight,
-                 float *outputLeft, float *outputRight, int samples,
+                 float *const *outputChannels, std::size_t outputChannelCount,
+                 int samples,
                  const MidiEvent *midiEvents, std::size_t midiEventCount,
                  SysExOutputEvent *sysExOutput = nullptr,
                  std::size_t sysExOutputCapacity = 0,
                  std::size_t *sysExOutputCount = nullptr);
+    void process(const float *inputLeft, const float *inputRight,
+                 float *outputLeft, float *outputRight, int samples,
+                 const MidiEvent *midiEvents, std::size_t midiEventCount,
+                 SysExOutputEvent *sysExOutput = nullptr,
+                 std::size_t sysExOutputCapacity = 0,
+                 std::size_t *sysExOutputCount = nullptr) {
+        float *channels[2] = {outputLeft, outputRight};
+        process(inputLeft, inputRight, channels, 2, samples, midiEvents,
+                midiEventCount, sysExOutput, sysExOutputCapacity,
+                sysExOutputCount);
+    }
 
     [[nodiscard]] std::uint64_t cpuCycles() const {
         return publishedCycles.load(std::memory_order_relaxed);

@@ -284,12 +284,15 @@ static void plugin_error(char *error, size_t error_size, const char *message) {
 }
 
 static void plugin_queue_audio(uint64_t cycle, uint32_t divider,
-                               float left, float right) {
+                               const float outputs[8]) {
     const size_t next = (plugin_audio_queue_write + 1) % PLUGIN_AUDIO_QUEUE_CAPACITY;
     if (next == plugin_audio_queue_read)
         plugin_audio_queue_read = (plugin_audio_queue_read + 1) % PLUGIN_AUDIO_QUEUE_CAPACITY;
-    plugin_audio_queue[plugin_audio_queue_write] =
-        (Eps16ProbeAudioFrame){cycle, divider, left, right};
+    Eps16ProbeAudioFrame *queued =
+        &plugin_audio_queue[plugin_audio_queue_write];
+    queued->cpu_cycle = cycle;
+    queued->clock_divider = divider;
+    memcpy(queued->outputs, outputs, sizeof(queued->outputs));
     plugin_audio_queue_write = next;
 }
 
@@ -394,8 +397,17 @@ static void plugin_render_audio(uint64_t elapsed_cycles, uint64_t end_cycle) {
                 (float)audio_to_pcm16(visible_output_left) / 32768.0f;
             plugin_output_right =
                 (float)audio_to_pcm16(visible_output_right) / 32768.0f;
-            plugin_queue_audio(frame_cycle, output_divider,
-                               plugin_output_left, plugin_output_right);
+            const float outputs[8] = {
+                plugin_output_left,
+                plugin_output_right,
+                (float)audio_to_pcm16(buses[2][frame]) / 32768.0f,
+                (float)audio_to_pcm16(buses[3][frame]) / 32768.0f,
+                (float)audio_to_pcm16(buses[6][frame]) / 32768.0f,
+                (float)audio_to_pcm16(buses[7][frame]) / 32768.0f,
+                (float)audio_to_pcm16(buses[4][frame]) / 32768.0f,
+                (float)audio_to_pcm16(buses[5][frame]) / 32768.0f
+            };
+            plugin_queue_audio(frame_cycle, output_divider, outputs);
             frame_cycle += output_divider;
         }
     }

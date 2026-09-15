@@ -38,8 +38,9 @@ void eps16_probe_machine_run_until(uint64_t cpu_cycle);
 typedef struct {
     uint64_t cpu_cycle;
     uint32_t clock_divider;
-    float left;
-    float right;
+    /* Main L/R followed by the six dry OEX-6 outputs:
+       Bus 2 L/R, Bus 3 L/R and Aux 1 L/R. */
+    float outputs[8];
 } Eps16ProbeAudioFrame;
 size_t eps16_probe_machine_drain_audio(Eps16ProbeAudioFrame *frames,
                                        size_t capacity);

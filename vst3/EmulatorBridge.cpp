@@ -273,7 +273,8 @@ void EmulatorBridge::collectMidiOutput(int sampleOffset,
 }
 
 void EmulatorBridge::process(const float *inputLeft, const float *inputRight,
-                             float *outputLeft, float *outputRight, int samples,
+                             float *const *outputChannels,
+                             std::size_t outputChannelCount, int samples,
                              const MidiEvent *midiEvents,
                              std::size_t midiEventCount,
                              SysExOutputEvent *sysExOutput,
@@ -281,10 +282,12 @@ void EmulatorBridge::process(const float *inputLeft, const float *inputRight,
                              std::size_t *sysExOutputCount) {
     std::size_t outputCount = 0;
     if (sysExOutputCount) *sysExOutputCount = 0;
-    if (samples <= 0 || !outputLeft || !outputRight) return;
+    if (samples <= 0 || !outputChannels || outputChannelCount < 2 ||
+        !outputChannels[0] || !outputChannels[1]) return;
     if (!sink.beginBlock()) {
-        std::fill_n(outputLeft, samples, 0.0f);
-        std::fill_n(outputRight, samples, 0.0f);
+        for (std::size_t channel = 0; channel < outputChannelCount; ++channel)
+            if (outputChannels[channel])
+                std::fill_n(outputChannels[channel], samples, 0.0f);
         return;
     }
     dispatchControls(clock.cycles());
@@ -303,11 +306,12 @@ void EmulatorBridge::process(const float *inputLeft, const float *inputRight,
         sink.runUntil(cycle);
         collectMidiOutput(sample, sysExOutput, sysExOutputCapacity,
                           outputCount);
-        float left = 0.0f;
-        float right = 0.0f;
-        sink.stereoOutput(left, right, cycle);
-        outputLeft[sample] = left;
-        outputRight[sample] = right;
+        std::array<float, 8> frame{};
+        sink.audioOutput(frame.data(), frame.size(), cycle);
+        const auto channels = std::min(outputChannelCount, frame.size());
+        for (std::size_t channel = 0; channel < channels; ++channel)
+            if (outputChannels[channel])
+                outputChannels[channel][sample] = frame[channel];
     }
     while (midiIndex < midiEventCount) {
         dispatchMidi(midiEvents[midiIndex], clock.cycles());

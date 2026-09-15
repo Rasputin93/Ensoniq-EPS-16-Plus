@@ -1331,7 +1331,6 @@ static void kpc_execution_start_physical(uint64_t cycle) {
 static void kpc_execution_drain_transmit(uint64_t cycle) {
     uint8_t reply;
     while (kpc_device_transmit(&kpc_device, &reply)) {
-        int schedule_track_ready = 0;
         if (getenv("EPS16_TRACE_KPC_EXEC"))
             fprintf(stderr,
                     "kpc_exec tx=%02x main_cycle=%llu kpc_cycle=%llu pc=%04x e4=%02x e5=%02x\n",
@@ -1350,9 +1349,6 @@ static void kpc_execution_drain_transmit(uint64_t cycle) {
             kpc_physical_saw_code = 1;
         } else if (kpc_physical_active && kpc_physical_saw_code &&
                    reply == 0) {
-            schedule_track_ready =
-                !(kpc_physical_expected & 0x80) &&
-                panel_is_track(kpc_physical_expected);
             kpc_device_panel_transition_complete(&kpc_device);
             kpc_physical_active = 0;
             kpc_physical_saw_code = 0;
@@ -1361,16 +1357,8 @@ static void kpc_execution_drain_transmit(uint64_t cycle) {
             uint64_t hold_cycles = hold_cycles_text && *hold_cycles_text
                 ? strtoull(hold_cycles_text, NULL, 0) : 1000000;
             kpc_physical_next_cycle = cycle + hold_cycles;
-            /* The original OS waits for the KPC's trailing ready byte after
-               an Instrument/Track release.  The legacy physical-panel path
-               already supplies this byte; the firmware-execution path must
-               do the same or the OS remains in its track-select handler until
-               an unrelated MIDI interrupt arrives, cutting all active audio
-               in MULTI mode in the meantime. */
         }
         panel_schedule_at(reply, cycle + PANEL_BYTE_CYCLES);
-        if (schedule_track_ready)
-            panel_schedule_at(0xff, cycle + 2 * PANEL_BYTE_CYCLES);
     }
 }
 

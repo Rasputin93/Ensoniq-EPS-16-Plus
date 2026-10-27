@@ -103,6 +103,9 @@ private:
     bool blockActive{};
     std::uint64_t cycleBase{};
     std::array<BandlimitedResampler, 4> resamplers;
+    bool trackOutputDebugPending{};
+    std::uint64_t trackOutputDebugFrames{};
+    std::array<float, 4> trackOutputDebugPeaks{};
 };
 
 } // namespace eps16::vst3

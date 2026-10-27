@@ -2,6 +2,8 @@
 #include "ProbeMachine.h"
 
 #include <algorithm>
+#include <cmath>
+#include <cstdio>
 #include <utility>
 
 namespace eps16::vst3 {
@@ -177,6 +179,7 @@ void ProbeMachineSink::runUntil(std::uint64_t absoluteCpuCycle) {
     Eps16ProbeAudioFrame frames[32];
     for (;;) {
         const auto count = eps16_probe_machine_drain_audio(frames, 32);
+        if (trackOutputDebugPending) trackOutputDebugFrames += count;
         for (std::size_t index = 0; index < count; ++index) {
             const auto &frame = frames[index];
             for (std::size_t bus = 0; bus < resamplers.size(); ++bus)
@@ -191,6 +194,19 @@ void ProbeMachineSink::runUntil(std::uint64_t absoluteCpuCycle) {
 
 void ProbeMachineSink::midi(std::uint8_t status, std::uint8_t data1,
                             std::uint8_t data2, std::uint64_t) {
+    if (trackOutputDebugPending && status < 0xf8) {
+#if EPS16_TRACK_DIAGNOSTICS
+        if (auto *file = std::fopen("/tmp/EPS16-TrackSelect.log", "a")) {
+            std::fprintf(file,
+                "event=host-before-next-midi frames=%llu host=%f/%f/%f/%f\n",
+                static_cast<unsigned long long>(trackOutputDebugFrames),
+                trackOutputDebugPeaks[0], trackOutputDebugPeaks[1],
+                trackOutputDebugPeaks[2], trackOutputDebugPeaks[3]);
+            std::fclose(file);
+        }
+#endif
+        trackOutputDebugPending = false;
+    }
     if (isReady()) eps16_probe_machine_midi(status, data1, data2);
 }
 
@@ -212,6 +228,15 @@ std::size_t ProbeMachineSink::drainMidiOutput(std::uint8_t *bytes,
 }
 
 void ProbeMachineSink::panelByte(std::uint8_t value, std::uint64_t) {
+    static constexpr std::array<std::uint8_t, 8> trackCodes{
+        0x02, 0x08, 0x0e, 0x14, 0x04, 0x22, 0x1c, 0x16
+    };
+    if (std::find(trackCodes.begin(), trackCodes.end(), value) !=
+        trackCodes.end()) {
+        trackOutputDebugPending = true;
+        trackOutputDebugFrames = 0;
+        trackOutputDebugPeaks.fill(0.0f);
+    }
     if (isReady()) eps16_probe_machine_panel_byte(value);
 }
 
@@ -237,6 +262,14 @@ void ProbeMachineSink::audioOutput(float *channels, std::size_t channelCount,
     for (std::size_t bus = 0; bus < busCount; ++bus)
         resamplers[bus].output(cycle, channels[bus * 2],
                               channels[bus * 2 + 1]);
+    if (trackOutputDebugPending) {
+        for (std::size_t bus = 0; bus < busCount; ++bus) {
+            const auto left = std::abs(channels[bus * 2]);
+            const auto right = std::abs(channels[bus * 2 + 1]);
+            trackOutputDebugPeaks[bus] = std::max(
+                trackOutputDebugPeaks[bus], std::max(left, right));
+        }
+    }
     /* The sampling board's mono input monitor is present only while the
        original OS has selected the Level-Detect VFD mode with its trigger
        marker. This is the EPS board route, not the disabled VST Main Input

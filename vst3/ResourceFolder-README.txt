@@ -1,4 +1,4 @@
-Ensoniq EPS-16 Plus 1.0.9 external files
+Ensoniq EPS-16 Plus 1.1.1 external files
 =========================================
 
 The universal VST3 and Audio Unit v2 support Intel macOS 10.13 or newer and

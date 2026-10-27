@@ -10,7 +10,7 @@ if(CMAKE_HOST_APPLE AND
   set(CMAKE_OSX_DEPLOYMENT_TARGET "${EPS16_DEFAULT_MACOS_TARGET}" CACHE STRING
       "Minimum macOS version" FORCE)
 endif()
-project(eps16_emulator_foundation VERSION 1.1.0 LANGUAGES C CXX)
+project(eps16_emulator_foundation VERSION 1.1.1 LANGUAGES C CXX)
 
 option(EPS16_BUILD_VST3 "Build the EPS-16 Plus AU/VST3 plug-in" OFF)
 

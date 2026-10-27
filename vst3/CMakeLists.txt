@@ -160,6 +160,21 @@ target_include_directories(eps16_probe_machine PUBLIC
 )
 target_link_libraries(eps16_probe_machine PUBLIC musashi_vst)
 
+option(EPS16_TRACK_DIAGNOSTICS "Write Track Select diagnostics from the audio thread" OFF)
+target_compile_definitions(eps16_probe_machine PUBLIC
+  EPS16_TRACK_DIAGNOSTICS=$<BOOL:${EPS16_TRACK_DIAGNOSTICS}>
+)
+
+option(EPS16_OEX_TEST_IDENTITY "Build a separately identified OEX test plug-in" OFF)
+set(EPS16_PRODUCT_NAME "Ensoniq EPS-16 Plus")
+set(EPS16_BUNDLE_ID "org.eps16plus.prototype")
+set(EPS16_PLUGIN_CODE Ep16)
+if(EPS16_OEX_TEST_IDENTITY)
+  set(EPS16_PRODUCT_NAME "Ensoniq EPS-16 Plus OEX Test")
+  set(EPS16_BUNDLE_ID "org.eps16plus.oex.nofileiotest")
+  set(EPS16_PLUGIN_CODE Et27)
+endif()
+
 if(APPLE)
   set(EPS16_PLUGIN_FORMATS AU VST3)
 else()
@@ -168,11 +183,11 @@ endif()
 
 juce_add_plugin(Eps16Plus
   COMPANY_NAME "EPS-16 Plus Emulator"
-  BUNDLE_ID "org.eps16plus.prototype"
+  BUNDLE_ID "${EPS16_BUNDLE_ID}"
   PLUGIN_MANUFACTURER_CODE EnIQ
-  PLUGIN_CODE Ep16
+  PLUGIN_CODE ${EPS16_PLUGIN_CODE}
   FORMATS ${EPS16_PLUGIN_FORMATS}
-  PRODUCT_NAME "Ensoniq EPS-16 Plus"
+  PRODUCT_NAME "${EPS16_PRODUCT_NAME}"
   IS_SYNTH TRUE
   NEEDS_MIDI_INPUT TRUE
   NEEDS_MIDI_OUTPUT TRUE
@@ -391,6 +406,9 @@ target_link_libraries(eps16_indicator_map_probe PRIVATE eps16_probe_machine)
 
 add_executable(eps16_probe_machine_restore_test ProbeMachineRestoreTest.c)
 target_link_libraries(eps16_probe_machine_restore_test PRIVATE eps16_probe_machine)
+
+add_executable(eps16_track_select_audio_test TrackSelectAudioTest.c)
+target_link_libraries(eps16_track_select_audio_test PRIVATE eps16_probe_machine)
 
 add_executable(eps16_probe_machine_multi_instance_test
   ProbeMachineMultiInstanceTest.c

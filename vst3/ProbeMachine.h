@@ -39,9 +39,17 @@ typedef struct {
     uint64_t cpu_cycle;
     uint32_t clock_divider;
     /* Main L/R followed by the six dry OEX-6 outputs:
-       Bus 2 L/R, Bus 3 L/R and Aux 1 L/R. */
+       Bus 2 L/R, Bus 3 L/R and Aux 1 L/R. The EPS output assignment
+       numbering is offset from the ES5505's raw stereo-bus numbering. */
     float outputs[8];
 } Eps16ProbeAudioFrame;
+
+typedef struct {
+    unsigned int active_voices;
+    int es5510_halted;
+    int host_upload_active;
+    size_t pending_panel_transitions;
+} Eps16ProbeAudioDebugState;
 size_t eps16_probe_machine_drain_audio(Eps16ProbeAudioFrame *frames,
                                        size_t capacity);
 void eps16_probe_machine_midi(uint8_t status, uint8_t data1, uint8_t data2);
@@ -75,6 +83,7 @@ void eps16_probe_machine_reset_audio_peaks(void);
 float eps16_probe_machine_es5505_bus_peak(unsigned int bus);
 float eps16_probe_machine_es5510_return_peak(void);
 float eps16_probe_machine_output_peak(void);
+void eps16_probe_machine_audio_debug_state(Eps16ProbeAudioDebugState *state);
 size_t eps16_probe_machine_state_size(void);
 int eps16_probe_machine_save_state(void *data, size_t size);
 int eps16_probe_machine_load_state(const void *data, size_t size,

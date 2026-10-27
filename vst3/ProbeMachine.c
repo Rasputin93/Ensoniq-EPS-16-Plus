@@ -26,6 +26,7 @@ static void plugin_capture_keyon(unsigned int voice);
 #include "m68kcpu.h"
 
 #include <math.h>
+#include <stdio.h>
 
 enum { PLUGIN_AUDIO_QUEUE_CAPACITY = 1024 };
 
@@ -41,6 +42,7 @@ typedef struct {
     float output_left, output_right;
     Eps16ProbeAudioFrame audio_queue[PLUGIN_AUDIO_QUEUE_CAPACITY];
     size_t audio_queue_read, audio_queue_write;
+    uint64_t audio_queue_drops;
     uint8_t panel_pair[2];
     size_t panel_pair_count;
     char published_display[23];
@@ -51,6 +53,7 @@ typedef struct {
     uint32_t restored_voice_mask;
     unsigned int restored_quiet_frames;
     int restored_output_suppressed;
+    int track_debug_pending;
 } PluginRuntimeState;
 
 struct Eps16ProbeMachine {
@@ -77,6 +80,7 @@ static EPS16_THREAD_LOCAL Eps16ProbeMachine *plugin_current_machine;
 #define plugin_audio_queue (plugin_current_machine->plugin.audio_queue)
 #define plugin_audio_queue_read (plugin_current_machine->plugin.audio_queue_read)
 #define plugin_audio_queue_write (plugin_current_machine->plugin.audio_queue_write)
+#define plugin_audio_queue_drops (plugin_current_machine->plugin.audio_queue_drops)
 #define plugin_panel_pair (plugin_current_machine->plugin.panel_pair)
 #define plugin_panel_pair_count (plugin_current_machine->plugin.panel_pair_count)
 #define plugin_published_display (plugin_current_machine->plugin.published_display)
@@ -96,6 +100,8 @@ static EPS16_THREAD_LOCAL Eps16ProbeMachine *plugin_current_machine;
     (plugin_current_machine->plugin.restored_quiet_frames)
 #define plugin_restored_output_suppressed \
     (plugin_current_machine->plugin.restored_output_suppressed)
+#define plugin_track_debug_pending \
+    (plugin_current_machine->plugin.track_debug_pending)
 
 static void plugin_capture_display(const char display[23], uint32_t decimal_mask,
                                    int cursor_start, int cursor_end,
@@ -117,6 +123,51 @@ static void plugin_capture_keyon(unsigned int voice) {
         plugin_restored_quiet_frames = 0;
         plugin_restored_output_suppressed = 0;
     }
+}
+
+static int plugin_track_code(uint8_t value) {
+    static const uint8_t codes[8] = {
+        0x02, 0x08, 0x0e, 0x14, 0x04, 0x22, 0x1c, 0x16
+    };
+    value &= 0x7f;
+    for (size_t index = 0; index < sizeof(codes); ++index)
+        if (value == codes[index]) return 1;
+    return 0;
+}
+
+/* Event-driven diagnostic trail for the Track Select hard-cut report. */
+static void plugin_track_debug_log(const char *event) {
+#if EPS16_TRACK_DIAGNOSTICS
+    FILE *file = fopen("/tmp/EPS16-TrackSelect.log", "a");
+    if (!file) return;
+    unsigned int voices = 0;
+    unsigned int highest_voice = 0;
+    uint32_t voice_mask = 0;
+    for (unsigned int voice = 0; voice < ES5505_VOICES; ++voice) {
+        if (es5505.voices[voice].control & ES5505_STOP_MASK) continue;
+        ++voices;
+        highest_voice = voice;
+        voice_mask |= UINT32_C(1) << voice;
+    }
+    fprintf(file,
+            "event=%s cycle=%llu voices=%u esp_halted=%d esp_upload=%d "
+            "scan=%u highest=%u voice_mask=%08x kpc_pending=%zu "
+            "queue_drops=%llu main=%f bus=%f/%f/%f/%f esp=%f\n",
+            event, (unsigned long long)plugin_executed, voices, es5510.halted,
+            es5510_host_upload_active, es5505.active_voice, highest_voice,
+            voice_mask, kpc_physical_queue_count +
+                (kpc_physical_active ? 1U : 0U),
+            (unsigned long long)plugin_audio_queue_drops,
+            (float)audio_peak / 524288.0f,
+            (float)es5505_bus_peak[0] / 524288.0f,
+            (float)es5505_bus_peak[1] / 524288.0f,
+            (float)es5505_bus_peak[2] / 524288.0f,
+            (float)es5505_bus_peak[3] / 524288.0f,
+            (float)es5510_return_peak / 32768.0f);
+    fclose(file);
+#else
+    (void)event;
+#endif
 }
 
 #define PLUGIN_SNAPSHOT_FIELDS(X) \
@@ -286,8 +337,10 @@ static void plugin_error(char *error, size_t error_size, const char *message) {
 static void plugin_queue_audio(uint64_t cycle, uint32_t divider,
                                const float outputs[8]) {
     const size_t next = (plugin_audio_queue_write + 1) % PLUGIN_AUDIO_QUEUE_CAPACITY;
-    if (next == plugin_audio_queue_read)
+    if (next == plugin_audio_queue_read) {
         plugin_audio_queue_read = (plugin_audio_queue_read + 1) % PLUGIN_AUDIO_QUEUE_CAPACITY;
+        ++plugin_audio_queue_drops;
+    }
     Eps16ProbeAudioFrame *queued =
         &plugin_audio_queue[plugin_audio_queue_write];
     queued->cpu_cycle = cycle;
@@ -400,12 +453,15 @@ static void plugin_render_audio(uint64_t elapsed_cycles, uint64_t end_cycle) {
             const float outputs[8] = {
                 plugin_output_left,
                 plugin_output_right,
-                (float)audio_to_pcm16(buses[2][frame]) / 32768.0f,
-                (float)audio_to_pcm16(buses[3][frame]) / 32768.0f,
+                /* EPS Bus 2 is ES5505 raw bus 3. */
+                (float)audio_to_pcm16(buses[4][frame]) / 32768.0f,
+                (float)audio_to_pcm16(buses[5][frame]) / 32768.0f,
+                /* EPS Bus 3 is ES5505 raw bus 4. */
                 (float)audio_to_pcm16(buses[6][frame]) / 32768.0f,
                 (float)audio_to_pcm16(buses[7][frame]) / 32768.0f,
-                (float)audio_to_pcm16(buses[4][frame]) / 32768.0f,
-                (float)audio_to_pcm16(buses[5][frame]) / 32768.0f
+                /* EPS Aux 1 is ES5505 raw bus 2. */
+                (float)audio_to_pcm16(buses[2][frame]) / 32768.0f,
+                (float)audio_to_pcm16(buses[3][frame]) / 32768.0f
             };
             plugin_queue_audio(frame_cycle, output_divider, outputs);
             frame_cycle += output_divider;
@@ -663,6 +719,10 @@ size_t eps16_probe_machine_drain_audio(Eps16ProbeAudioFrame *frames,
 
 void eps16_probe_machine_midi(uint8_t status, uint8_t data1, uint8_t data2) {
     if (!plugin_initialized) return;
+    if (plugin_track_debug_pending && status < 0xf8) {
+        plugin_track_debug_log("before-next-midi");
+        plugin_track_debug_pending = 0;
+    }
     if (status >= 0xf8) {
         midi_schedule_at(status, bus_cycle_now());
         return;
@@ -715,8 +775,18 @@ void eps16_probe_machine_panel_byte(uint8_t value) {
     if (!plugin_initialized) return;
     plugin_panel_pair[plugin_panel_pair_count++] = value;
     if (plugin_panel_pair_count == 2) {
+        const uint8_t transition = plugin_panel_pair[0];
         kpc_execution_panel_packet(plugin_panel_pair, 2, plugin_executed);
         plugin_panel_pair_count = 0;
+        if (plugin_track_code(transition)) {
+            if (transition & 0x80) {
+                plugin_track_debug_log("track-press");
+            } else {
+                eps16_probe_machine_reset_audio_peaks();
+                plugin_track_debug_pending = 1;
+                plugin_track_debug_log("track-release");
+            }
+        }
     }
 }
 
@@ -840,6 +910,19 @@ float eps16_probe_machine_es5510_return_peak(void) {
 
 float eps16_probe_machine_output_peak(void) {
     return (float)audio_peak / 524288.0f;
+}
+
+void eps16_probe_machine_audio_debug_state(Eps16ProbeAudioDebugState *state) {
+    if (!state) return;
+    memset(state, 0, sizeof(*state));
+    if (!plugin_initialized) return;
+    for (unsigned int voice = 0; voice < ES5505_VOICES; ++voice)
+        if (!(es5505.voices[voice].control & ES5505_STOP_MASK))
+            ++state->active_voices;
+    state->es5510_halted = es5510.halted;
+    state->host_upload_active = es5510_host_upload_active;
+    state->pending_panel_transitions = kpc_physical_queue_count +
+        (kpc_physical_active ? 1U : 0U);
 }
 
 size_t eps16_probe_machine_debug_read_ram(uint32_t address, void *data,

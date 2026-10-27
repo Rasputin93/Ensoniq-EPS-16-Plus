@@ -11,16 +11,17 @@ licence details.
 
 ![EPS-16 Plus VST3 panel and keyboard](docs/images/eps16-plus-vst3-panel-keyboard.png)
 
-## 1.1.0
+## 1.1.1
 
-- Routed external channel-voice MIDI through the original EPS MIDI input,
-  preserving all 16 MIDI channels for the OS-controlled MULTI and MONO modes.
-- Added polyphonic and channel pressure plus channel-aware CC, program-change
-  and pitch-bend handling, including CC7, CC64 and Ensoniq patch-select CC70.
-- Fixed a Windows-only Musashi opcode-table overrun that could crash the VST3
-  as soon as ROM, KPC firmware and an OS disk were present together.
-- Added an automated Windows machine-start regression test to the build
-  workflow.
+- Added OEX-6 multi-output support: Main plus separate stereo Bus 2, Bus 3 and
+  Aux 1 outputs in Audio Unit and VST3, with corrected output labels/routing.
+- Routed external MIDI through the original EPS MIDI input, preserving all
+  16 channels for OS-controlled MULTI and MONO operation.
+- Added polyphonic/channel pressure and channel-aware controller,
+  program-change and pitch-bend handling, including CC7, CC64 and CC70.
+- Fixed a Windows Musashi opcode-table overrun during machine startup and
+  added an automated Windows startup regression check.
+- Disabled Track Select diagnostic file logging by default.
 
 ## 1.0.10
 
@@ -125,11 +126,6 @@ licence details.
 
 ## About the EPS-16 Plus
 
-The EPS-16 Plus is a performance sampler whose character comes from much more
-than its sample memory. Its pitch interpolation, voice architecture, filters,
-loop modes, modulation, envelopes, effects, sampling path and original
-operating system all contribute to the way the instrument feels and sounds.
-
 This project does not replace that workflow with a modern sample player. It
 recreates the hardware around the original Ensoniq software: the Motorola
 68000 program, keyboard/panel controller, ES5505 voice chip, ES5510 effects
@@ -142,14 +138,11 @@ menus from text or bypass the sampler's own logic.
 
 ## Download
 
-### [Download Ensoniq EPS-16 Plus 1.0.10 — macOS Universal AU + VST3](https://github.com/mardlib/Ensoniq-EPS-16-Plus/releases/download/v1.0.10/Ensoniq-EPS-16-Plus-1.0.10-macOS-universal.zip)
+### [Download Ensoniq EPS-16 Plus 1.1.1 — macOS Universal AU + VST3](https://github.com/mardlib/Ensoniq-EPS-16-Plus/releases/download/v1.1.1/Ensoniq-EPS-16-Plus-1.1.1-macOS-universal.zip)
 
-### [Download Ensoniq EPS-16 Plus 1.0.10 — Windows x64 VST3](https://github.com/mardlib/Ensoniq-EPS-16-Plus/releases/download/v1.0.10/Ensoniq-EPS-16-Plus-1.0.10-Windows-x64.zip)
+### [Download Ensoniq EPS-16 Plus 1.1.1 — Windows x64 VST3](https://github.com/mardlib/Ensoniq-EPS-16-Plus/releases/download/v1.1.1/Ensoniq-EPS-16-Plus-1.1.1-Windows-x64.zip)
 
-SHA-256:
-
-- macOS: `02e51aa61d78b080f9d56d6bf952a881bf0ff72bfe7fdc977b99dc8c97e29996`
-- Windows: `16729b7f17a2051bd92fa7e2af153fde7340522f507e40ecab038741a2710f0e`
+SHA-256 checksums are included with the [release assets](https://github.com/mardlib/Ensoniq-EPS-16-Plus/releases/tag/v1.1.1).
 
 The macOS plug-ins support Intel Macs with macOS 10.13 High Sierra or newer
 and Apple Silicon Macs with macOS 11 or newer. The Windows VST3 supports
@@ -306,6 +299,19 @@ button.
 Each plug-in instance owns an independent virtual drive. The mounted media
 name is shown above the four disk icons.
 
+## OEX-6 output routing and uninterrupted track selection
+
+The plug-in exposes Main Output, OEX Bus 2, OEX Bus 3 and OEX Aux 1 as
+stereo output pairs. Enable the additional outputs in the host and route
+separate audio tracks from them. The EPS OS owns wavesample/track output
+assignments; the plug-in does not add an independent routing matrix.
+
+For externally sequenced MULTI setups, select `FX=BANK` or a global ROM effect
+on the EFFECT SELECT/BYPASS page to keep one effect setup while selecting
+instruments. In `FX=INST`, selecting an instrument can reload its stored effect
+and briefly interrupt the complete Main output, including the dry signal. This
+is documented original-EPS behavior, not a Track Select audio-cut fix.
+
 ## Presets, projects and multiple instances
 
 Saving the DAW project captures the full running machine state: CPU and OS
@@ -318,7 +324,7 @@ project state.
 
 ## Known limitations
 
-- This is the **1.0.9** release for Intel macOS 10.13+ and Apple Silicon
+- This is the **1.1.1** release for Intel macOS 10.13+ and Apple Silicon
   macOS 11+.
 - The Audio Unit v2 and VST3 bundles both contain Intel and Apple Silicon code.
 - SCSI ISO mounting and the Control/Option number-key shortcuts are

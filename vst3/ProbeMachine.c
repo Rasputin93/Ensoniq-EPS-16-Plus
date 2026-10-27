@@ -242,6 +242,9 @@ static void plugin_track_debug_log(const char *event) {
 #define PLUGIN_SNAPSHOT_V7_FIELDS(X) \
     X(disk_sector_status) X(fdc_error_status)
 
+#define PLUGIN_SNAPSHOT_V8_FIELDS(X) \
+    X(duart_rx_a_enabled)
+
 Eps16ProbeMachine *eps16_probe_machine_create(void) {
     Eps16ProbeMachine *machine = calloc(1, sizeof(*machine));
     if (!machine) return NULL;
@@ -990,7 +993,8 @@ size_t eps16_probe_machine_state_size(void) {
            PLUGIN_SNAPSHOT_V4_FIELDS(SNAPSHOT_FIELD_SIZE)
            PLUGIN_SNAPSHOT_V5_FIELDS(SNAPSHOT_FIELD_SIZE)
            PLUGIN_SNAPSHOT_V6_FIELDS(SNAPSHOT_FIELD_SIZE)
-           PLUGIN_SNAPSHOT_V7_FIELDS(SNAPSHOT_FIELD_SIZE);
+           PLUGIN_SNAPSHOT_V7_FIELDS(SNAPSHOT_FIELD_SIZE)
+           PLUGIN_SNAPSHOT_V8_FIELDS(SNAPSHOT_FIELD_SIZE);
 #undef SNAPSHOT_FIELD_SIZE
 }
 
@@ -1000,7 +1004,7 @@ int eps16_probe_machine_save_state(void *data, size_t size) {
     memset(data, 0, size);
     PluginSnapshotHeader *header = (PluginSnapshotHeader *)data;
     memcpy(header->magic, "EPS16ST\0", 8);
-    header->version = 7;
+    header->version = 8;
     header->header_size = sizeof(*header);
     header->total_size = size;
     header->m68k_context_size = m68k_context_size();
@@ -1024,6 +1028,7 @@ int eps16_probe_machine_save_state(void *data, size_t size) {
     PLUGIN_SNAPSHOT_V5_FIELDS(SNAPSHOT_SAVE_FIELD)
     PLUGIN_SNAPSHOT_V6_FIELDS(SNAPSHOT_SAVE_FIELD)
     PLUGIN_SNAPSHOT_V7_FIELDS(SNAPSHOT_SAVE_FIELD)
+    PLUGIN_SNAPSHOT_V8_FIELDS(SNAPSHOT_SAVE_FIELD)
 #undef SNAPSHOT_SAVE_FIELD
 
     Es5505Core saved_es5505 = es5505;
@@ -1074,7 +1079,8 @@ int eps16_probe_machine_load_state(const void *data, size_t size,
     }
     PluginSnapshotHeader header;
     memcpy(&header, data, sizeof(header));
-    const size_t expected_v6 = eps16_probe_machine_state_size();
+    const size_t expected_v8 = eps16_probe_machine_state_size();
+    const size_t expected_v6 = expected_v8 - sizeof(duart_rx_a_enabled);
 #define SNAPSHOT_V7_FIELD_SIZE(name) - sizeof(name)
     const size_t expected_v6_legacy = expected_v6
         PLUGIN_SNAPSHOT_V7_FIELDS(SNAPSHOT_V7_FIELD_SIZE);
@@ -1104,9 +1110,10 @@ int eps16_probe_machine_load_state(const void *data, size_t size,
                           : header.version == 3 ? expected_v3
                           : header.version == 4 ? expected_v4
                           : header.version == 5 ? expected_v5
-                          : header.version == 6 ? expected_v6_legacy : expected_v6;
+                          : header.version == 6 ? expected_v6_legacy
+                          : header.version == 7 ? expected_v6 : expected_v8;
     if (memcmp(header.magic, "EPS16ST\0", 8) ||
-        (header.version < 1 || header.version > 7) ||
+        (header.version < 1 || header.version > 8) ||
         header.header_size != sizeof(header) || header.total_size != size ||
         size != expected || header.m68k_context_size != m68k_context_size()) {
         plugin_error(error, error_size, "machine snapshot format is incompatible");
@@ -1186,6 +1193,17 @@ int eps16_probe_machine_load_state(const void *data, size_t size,
         memset(disk_sector_status, EPS16_SECTOR_READABLE,
                sizeof(disk_sector_status));
         fdc_error_status = 0;
+    }
+    if (header.version >= 8) {
+        PLUGIN_SNAPSHOT_V8_FIELDS(SNAPSHOT_LOAD_FIELD)
+    } else {
+        /* Older snapshots predate external MIDI reception and omit the
+           receiver latch. Reconstruct it from the saved hardware command,
+           or the RX interrupt enable when CRA last changed only TX state.
+           The original OS still decides MIDI mode/channel/controller policy. */
+        const unsigned int command = duart_registers[2];
+        duart_rx_a_enabled = (command & 0x02) ? 0 :
+            ((command & 0x01) || (duart_registers[5] & 0x02)) != 0;
     }
 #undef SNAPSHOT_LOAD_FIELD
     snapshot_read(&reader, &es5505, sizeof(es5505));

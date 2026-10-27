@@ -19,6 +19,7 @@ licence details.
   16 channels for OS-controlled MULTI and MONO operation.
 - Added polyphonic/channel pressure and channel-aware controller,
   program-change and pitch-bend handling, including CC7, CC64 and CC70.
+- Preserved MIDI playback when restoring presets and DAW projects.
 - Fixed a Windows crash when starting the emulation.
 
 ## 1.0.10

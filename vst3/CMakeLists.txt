@@ -160,6 +160,10 @@ target_include_directories(eps16_probe_machine PUBLIC
 )
 target_link_libraries(eps16_probe_machine PUBLIC musashi_vst)
 
+add_executable(eps16_oex_routing_test OexRoutingTest.c)
+target_link_libraries(eps16_oex_routing_test PRIVATE eps16_probe_machine)
+add_test(NAME vst3_oex_routing COMMAND eps16_oex_routing_test)
+
 option(EPS16_TRACK_DIAGNOSTICS "Write Track Select diagnostics from the audio thread" OFF)
 target_compile_definitions(eps16_probe_machine PUBLIC
   EPS16_TRACK_DIAGNOSTICS=$<BOOL:${EPS16_TRACK_DIAGNOSTICS}>

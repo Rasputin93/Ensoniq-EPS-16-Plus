@@ -3386,10 +3386,10 @@ int main(int argc, char **argv) {
                     audio_to_pcm16(buses[0][frame]),
                     audio_to_pcm16(buses[1][frame]),
                     0, 0,
-                    audio_to_pcm16(buses[2][frame]),
-                    audio_to_pcm16(buses[3][frame]),
                     audio_to_pcm16(buses[4][frame]),
-                    audio_to_pcm16(buses[5][frame])
+                    audio_to_pcm16(buses[5][frame]),
+                    audio_to_pcm16(buses[6][frame]),
+                    audio_to_pcm16(buses[7][frame])
                 };
                 int16_t esp_outputs[2] = {0, 0};
                 if (es5510_host_upload_active &&

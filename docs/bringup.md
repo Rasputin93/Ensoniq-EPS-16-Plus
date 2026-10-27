@@ -390,8 +390,8 @@ written zero bits makes a valid sampling-program load fail with `ERROR 145`.
 
 The native audio path now preserves all four ES5505 stereo routes and executes
 the original OS-uploaded ES5510 GPR/instruction program with its external
-delay RAM. ES5505 route codes `0`, `1`, and `3` for Bus1, Bus2, and Bus3 feed
-ES5510 serial inputs 0, 2, and 3; route code `2` is the separate Aux1 pair.
+delay RAM. ES5505 route codes `0`, `2`, and `3` for Bus1, Bus2, and Bus3 feed
+ES5510 serial inputs 0, 2, and 3; route code `1` is the separate Aux1 pair.
 The OS-configured serial output 1 feeds the main EPS DAC. This is device-side
 routing rather than a browser reverb substitute.
 During effects, Host Serial Control `48` configures serial port 1 as the main

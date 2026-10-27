@@ -19,9 +19,7 @@ licence details.
   16 channels for OS-controlled MULTI and MONO operation.
 - Added polyphonic/channel pressure and channel-aware controller,
   program-change and pitch-bend handling, including CC7, CC64 and CC70.
-- Fixed a Windows Musashi opcode-table overrun during machine startup and
-  added an automated Windows startup regression check.
-- Disabled Track Select diagnostic file logging by default.
+- Fixed a Windows crash when starting the emulation.
 
 ## 1.0.10
 

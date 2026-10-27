@@ -35,8 +35,8 @@ jobs:
 
       - name: Build and run Windows machine-start test
         run: |
-          cmake --build work/windows-vst3-build --config Release --target eps16_vst3_editor_smoke_test --parallel
-          ctest --test-dir work/windows-vst3-build -C Release -R vst3_synthetic_machine_start --output-on-failure
+          cmake --build work/windows-vst3-build --config Release --target eps16_vst3_editor_smoke_test eps16_oex_routing_test --parallel
+          ctest --test-dir work/windows-vst3-build -C Release -R "vst3_synthetic_machine_start|vst3_oex_routing" --output-on-failure
 
       - name: Build and package
         run: cmake --build work/windows-vst3-build --config Release --target eps16_vst3_package --parallel
